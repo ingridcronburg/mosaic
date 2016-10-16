@@ -1,4 +1,4 @@
-MOSAIC
+# Mosaic
 
 Mosaic is a program that takes an image and converts it into a photo mosaic.
 
