@@ -1,107 +1,115 @@
+//Database
+var Img = require('./models');
+//Img.sync({force: true});
+
 //Promises
 var Promise = require("bluebird");
 var fs = require('fs');
-var readFile = Promise.promisify(fs.readFile);
 
-//Setting up canvas
+//Canvas
 var Canvas = require('canvas');
 var Image = Canvas.Image;
-var canvas = new Canvas(300, 300);
+var size = 800;
+var canvas = new Canvas(size, size);
 var ctx = canvas.getContext('2d');
 
 //Setting up image-to-slices
 var imageToSlices = require('image-to-slices');
-imageToSlices.configure({
-    clipperOptions: {
-        canvas: require('canvas')
-    }
-});
+imageToSlices.configure({clipperOptions: {canvas: require('canvas')}});
 
 //setting up color-thief
 var ColorThief = require('color-thief');
 var colorThief = new ColorThief();
 
-//testing color-thief
-// var color = colorThief.getColor('img/cat.jpg');
-// console.log('color is', color);
+var imgPath = '../../Desktop/20141226145427.jpg';
+var numTiles = 5000;
+var length = Math.floor(Math.sqrt(numTiles));
 
-//testing image-to-slices
-// imageToSlices('img/cat.jpg', [100, 200], [100, 200], {
-//     saveToDir: 'img/sections'
-// }, function() {
-//     console.log('Image has been sliced!');
-// });
+var grid = [];
 
-//loop through the tiles and log the color of each tile
-var tiles = [];
+for (var i = 1; i <= length; i++) {
+  grid.push(i * size/length);
+}
 
-for (var i = 1; i <= 9; i++) {
-  var tileColor = colorThief.getColor('img/sections/section-' + i + '.jpg');
+imageToSlices(imgPath, grid, grid, {saveToDir: '../../Desktop/Photos/Tiles'}, mosaic);
 
-  if (!tileColor) {
-    tileColor = [255, 255, 255];
+//build array of tile objects (each object contains path and color)
+function mosaic() {
+  var tiles = [];
+
+  for (var i = 1; i <= grid.length * grid.length; i++) {
+    var color = colorThief.getColor('../../Desktop/Photos/Tiles/section-' + i + '.jpg');
+
+    tiles.push({
+      path:  '../../Desktop/Photos/Tiles/section-' + i + '.jpg',
+      red:   color[0],
+      green: color[1],
+      blue:  color[2]
+    });
   }
 
-  var tileObj = {
-    path: 'img/sections/section-' + i,
-    color: tileColor
+  // look for matches
+  var getImagesFromTiles = function(tiles, results, cb) {
+    if (typeof results == "function") {
+      cb = results;
+      results = [];
+    }
+
+    if (!tiles.length) {
+      cb(results);
+      return;
+    }
+
+    var tile = tiles.shift();
+    var range = 10;
+    bfunction(range);
+
+    function bfunction(range) {
+      Img.findAll({where: {
+        red: {between: [tile.red - range, tile.red + range]},
+        green: {between: [tile.green - range, tile.green + range]},
+        blue: {between: [tile.blue - range, tile.blue + range]}
+      }})
+      .then(afunction);
+    }
+
+    function afunction(images) {
+      if ( ! images.length) {
+        range = range + 10;
+        return bfunction(range);
+      }
+
+      var smallestDist;
+      var bestMatch;
+
+      images.forEach(function(image) {
+        image.dist = Math.sqrt(Math.pow((tile.red - image.red), 2) + Math.pow((tile.green - image.green), 2) + Math.pow((tile.blue - image.blue), 2));
+
+        if (!smallestDist || image.dist < smallestDist) {
+          smallestDist = image.dist;
+          bestMatch = image;
+        }
+      });
+
+      results.push(bestMatch.path || images.shift().path);
+      getImagesFromTiles(tiles, results, cb);
+    }
   };
 
-  tiles.push(tileObj);
-}
+  getImagesFromTiles(tiles, function(paths) {
+    var length = Math.floor(Math.sqrt(paths.length));
+    var tile = size/length;
+    var counter = 0;
 
-//build array of potential replacement tiles
-var replacements = [];
-
-//manually adding objects to the replacements array for testing
-replacements.push({path: 'img/replacements/1.jpg', color: [71, 62, 61]});
-replacements.push({path: 'img/replacements/2.jpg', color: [61, 46, 45]});
-replacements.push({path: 'img/replacements/3.jpg', color: [255, 255, 255]});
-replacements.push({path: 'img/replacements/4.jpg', color: [97, 87, 88]});
-replacements.push({path: 'img/replacements/5.jpg', color: [216, 211, 211]});
-replacements.push({path: 'img/replacements/6.jpg', color: [80, 60, 53]});
-replacements.push({path: 'img/replacements/7.jpg', color: [238, 236, 236]});
-replacements.push({path: 'img/replacements/8.jpg', color: [222, 220, 219]});
-replacements.push({path: 'img/replacements/9.jpg', color: [59, 47, 44]});
-
-//search for color matches between the two arrays
-var newTiles = [];
-
-tiles.forEach(function(tile) {
-  replacements.forEach(function(replacement) {
-    if (replacement.color.toString() === tile.color.toString()) {
-      newTiles.push(replacement.path);
-    }
-  });
-});
-
-//recreating image with replacement tiles
-var mosaicArray = [];
-
-for (var i = 0; i < newTiles.length; i++) {
-  mosaicArray.push(readFile(newTiles[i]));
-}
-
-Promise.all(mosaicArray)
-.then(function(images) {
-  images.forEach(function(image, index) {
-    var img = new Image();
-    img.src = image;
-
-    var xVal = (index * 100) % 300;
-    var yVal;
-
-    if (index < 3) {
-      yVal = 0;
-    } else if (index >=3 && index < 6) {
-      yVal = 100;
-    } else {
-      yVal = 200;
+    for (var y = 0; y < length; y++) {
+      for (var x = 0; x < length; x++) {
+        var img = new Image();
+        img.src = paths[counter++];
+        console.log("counter", counter);
+        ctx.drawImage(img, x * tile, y * tile, tile, tile);
+      }
     }
 
-    ctx.drawImage(img, xVal, yVal, 100, 100);
+    fs.writeFile('../../Desktop/Photos/mosaic.jpg', canvas.toBuffer());
   });
-})
-.then(function() {
-  return fs.writeFile('img/finals/cat-mosaic.jpg', canvas.toBuffer());
-});
+}
